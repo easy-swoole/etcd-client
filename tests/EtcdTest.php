@@ -36,15 +36,18 @@ class EtcdTest extends Base
     {
         $client = $this->getEtcd()->client();
 
-//        $response =$client->authEnable();
-//        var_dump($response);
+        $response =$client->authEnable();
+        var_dump($response);
 
-//        $response = $client->authenticate('root', '123456');
-//        var_dump($response);
-        $client->setToken('oEEhkIDRMIQaUIUo.97');
+        $response = $client->authenticate('root', '123456');
+        var_dump($response);
+        $client->setToken($response);
+        //$client->setToken('CXUzNavcdAMnTYCp.105');
 
-//        $response = $client->get('test');
-//        $this->assertEquals('123456', $response['test']);
+        $response = $client->get('test');
+        var_dump($response);
+        //$this->assertEquals('123456', $response['test']);
+
 
         $response = $client->authDisable();
         var_dump($response);

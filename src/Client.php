@@ -678,7 +678,7 @@ class Client
 
         $header = [];
         if ($this->token) {
-            $header['Authorization'] = $this->token;
+            $header['Grpc-Metadata-Token'] = $this->token;
         }
 
         $url = sprintf('%s://%s:%s/%s/%s', $this->config->getScheme(), $this->config->getHost(),
