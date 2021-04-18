@@ -675,14 +675,14 @@ class Client
         if (!$params) {
             $params['php-etcd-client'] = 1;
         }
-        $data = [
-            'json' => $params,
-        ];
+
+        $header = [];
         if ($this->token) {
-            $data['headers'] = ['Grpc-Metadata-Token' => $this->token];
+            $header['Authorization'] = $this->token;
         }
 
-        $url = $this->config->getScheme() . '://' . $this->config->getHost() . ':' . $this->config->getPort() . $uri;
+        $url = sprintf('%s://%s:%s/%s/%s', $this->config->getScheme(), $this->config->getHost(),
+            $this->config->getPort(), $this->version, $uri);
 
         $httpClient = new HttpClient($url);
 
@@ -693,7 +693,8 @@ class Client
 
         $httpClient->setTimeout($this->config->getTimeout());
 
-        $response = $httpClient->post($data);
+        $response = $httpClient->postJson(json_encode($params), $header);
+
         $body = json_decode($response->getBody(), true);
         if ($this->pretty && isset($body['header'])) {
             unset($body['header']);

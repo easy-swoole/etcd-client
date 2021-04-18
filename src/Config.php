@@ -24,7 +24,7 @@ class Config extends SplBean
      * 端口号
      * @var int
      */
-    protected $port = '2379';
+    protected $port = 2379;
 
     /**
      * API版本
