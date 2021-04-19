@@ -109,7 +109,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function put($key, $value, array $options = [])
+    public function put(string $key, string $value, array $options = [])
     {
         $params = [
             'key' => $key,
@@ -152,7 +152,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function get($key, array $options = [])
+    public function get(string $key, array $options = [])
     {
         $params = [
             'key' => $key,
@@ -187,11 +187,11 @@ class Client
     /**
      * get all keys with prefix
      *
-     * @param  string $prefix
+     * @param string $prefix
      * @return array
      * @throws InvalidUrl
      */
-    public function getKeysWithPrefix($prefix)
+    public function getKeysWithPrefix(string $prefix)
     {
         $prefix = trim($prefix);
         if (!$prefix) {
@@ -210,13 +210,13 @@ class Client
      * Removes the specified key or range of keys
      *
      * @param string $key
-     * @param array  $options
+     * @param array $options
      *        string range_end
      *        bool   prev_kv
      * @return array
      * @throws InvalidUrl
      */
-    public function del($key, array $options = [])
+    public function del(string $key, array $options = [])
     {
         $params = [
             'key' => $key,
@@ -249,7 +249,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function compaction($revision, $physical = false)
+    public function compaction(int $revision, $physical = false)
     {
         $params = [
             'revision' => $revision,
@@ -269,13 +269,13 @@ class Client
      * will be expired and deleted if the lease expires.
      * Each expired key generates a delete event in the event history.",
      *
-     * @param int $ttl  TTL is the advisory time-to-live in seconds.
-     * @param int $id   ID is the requested ID for the lease.
+     * @param int $ttl TTL is the advisory time-to-live in seconds.
+     * @param int $id ID is the requested ID for the lease.
      *                    If ID is set to 0, the lessor chooses an ID.
      * @return array
      * @throws InvalidUrl
      */
-    public function grant($ttl, $id = 0)
+    public function grant(int $ttl, $id = 0)
     {
         $params = [
             'TTL' => $ttl,
@@ -288,12 +288,12 @@ class Client
     /**
      * revokes a lease. All keys attached to the lease will expire and be deleted.
      *
-     * @param int  $id ID is the lease ID to revoke. When the ID is revoked,
+     * @param int $id ID is the lease ID to revoke. When the ID is revoked,
      *               all associated keys will be deleted.
      * @return array
      * @throws InvalidUrl
      */
-    public function revoke($id)
+    public function revoke(int $id)
     {
         $params = [
             'ID' => $id,
@@ -307,11 +307,11 @@ class Client
      * from the client\nto the server and streaming keep alive responses
      * from the server to the client.
      *
-     * @param int $id  ID is the lease ID for the lease to keep alive.
+     * @param int $id ID is the lease ID for the lease to keep alive.
      * @return array
      * @throws InvalidUrl
      */
-    public function keepAlive($id)
+    public function keepAlive(int $id)
     {
         $params = [
             'ID' => $id,
@@ -337,7 +337,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function timeToLive($id, $keys = false)
+    public function timeToLive(int $id, $keys = false)
     {
         $params = [
             'ID' => $id,
@@ -388,12 +388,12 @@ class Client
     }
 
     /**
-     * @param  string $user
-     * @param  string $password
+     * @param string $user
+     * @param string $password
      * @return array
      * @throws InvalidUrl
      */
-    public function authenticate($user, $password)
+    public function authenticate(string $user, string $password)
     {
         $params = [
             'name' => $user,
@@ -415,7 +415,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function addRole($name)
+    public function addRole(string $name)
     {
         $params = [
             'name' => $name,
@@ -427,11 +427,11 @@ class Client
     /**
      * get detailed role information.
      *
-     * @param  string $role
+     * @param string $role
      * @return array
      * @throws InvalidUrl
      */
-    public function getRole($role)
+    public function getRole(string $role)
     {
         $params = [
             'role' => $role,
@@ -454,11 +454,11 @@ class Client
     /**
      * delete a specified role.
      *
-     * @param  string $role
+     * @param string $role
      * @return array
      * @throws InvalidUrl
      */
-    public function deleteRole($role)
+    public function deleteRole(string $role)
     {
         $params = [
             'role' => $role,
@@ -492,7 +492,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function addUser($user, $password)
+    public function addUser(string $user, string $password)
     {
         $params = [
             'name' => $user,
@@ -505,11 +505,11 @@ class Client
     /**
      * get detailed user information
      *
-     * @param  string $user
+     * @param string $user
      * @return array
      * @throws InvalidUrl
      */
-    public function getUser($user)
+    public function getUser(string $user)
     {
         $params = [
             'name' => $user,
@@ -530,7 +530,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function deleteUser($user)
+    public function deleteUser(string $user)
     {
         $params = [
             'name' => $user,
@@ -563,7 +563,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function changeUserPassword($user, $password)
+    public function changeUserPassword(string $user, string $password)
     {
         $params = [
             'name' => $user,
@@ -576,14 +576,14 @@ class Client
     /**
      * grant a permission of a specified key or range to a specified role.
      *
-     * @param string      $role
-     * @param int         $permType
-     * @param string      $key
+     * @param string $role
+     * @param int $permType
+     * @param string $key
      * @param string|null $rangeEnd
      * @return array
      * @throws InvalidUrl
      */
-    public function grantRolePermission($role, $permType, $key, $rangeEnd = null)
+    public function grantRolePermission(string $role, int $permType, string $key, ?string $rangeEnd = null)
     {
         $params = [
             'name' => $role,
@@ -602,13 +602,13 @@ class Client
     /**
      * revoke a key or range permission of a specified role.
      *
-     * @param string      $role
-     * @param string      $key
+     * @param string $role
+     * @param string $key
      * @param string|null $rangeEnd
      * @return array
      * @throws InvalidUrl
      */
-    public function revokeRolePermission($role, $key, $rangeEnd = null)
+    public function revokeRolePermission(string $role, string $key, ?string $rangeEnd = null)
     {
         $params = [
             'role' => $role,
@@ -624,12 +624,12 @@ class Client
     /**
      * grant a role to a specified user.
      *
-     * @param  string $user
-     * @param  string $role
+     * @param string $user
+     * @param string $role
      * @return array
      * @throws InvalidUrl
      */
-    public function grantUserRole($user, $role)
+    public function grantUserRole(string $user, string $role)
     {
         $params = [
             'user' => $user,
@@ -647,7 +647,7 @@ class Client
      * @return array
      * @throws InvalidUrl
      */
-    public function revokeUserRole($user, $role)
+    public function revokeUserRole(string $user, string $role)
     {
         $params = [
             'name' => $user,
@@ -692,8 +692,8 @@ class Client
         }
 
         $httpClient->setTimeout($this->config->getTimeout());
-
-        $response = $httpClient->postJson(json_encode($params), $header);
+        $httpClient->setHeaders($header, true, false);
+        $response = $httpClient->postJson(json_encode($params));
 
         $body = json_decode($response->getBody(), true);
         if ($this->pretty && isset($body['header'])) {
@@ -727,7 +727,7 @@ class Client
      * @param array  $fields  需要解码的字段
      * @return array
      */
-    protected function decodeBodyForFields(array $body, $bodyKey, array $fields)
+    protected function decodeBodyForFields(array $body, string $bodyKey, array $fields)
     {
         if (!isset($body[$bodyKey])) {
             return $body;
