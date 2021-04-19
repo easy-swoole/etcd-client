@@ -164,6 +164,7 @@ class EtcdTest extends Base
     {
         $this->client->authEnable();
         $token = $this->client->authenticate($this->user, $this->password);
+        $this->assertIsString($token);
         $this->client->setToken($token);
         $this->client->addUser('admin', '345678');
         $this->client->addRole('admin');
