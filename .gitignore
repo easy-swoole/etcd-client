@@ -8,6 +8,7 @@ runtime/
 vendor/
 temp/
 .phpintel/
+.phpunit.cache/
 .env
 .env.test
 .env.dev

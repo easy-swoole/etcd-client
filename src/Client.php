@@ -1,770 +1,329 @@
 <?php
+
 declare(strict_types=1);
 
 namespace EasySwoole\EtcdClient;
 
-use EasySwoole\HttpClient\Exception\InvalidUrl;
-use EasySwoole\HttpClient\HttpClient;
+use EasySwoole\EtcdClient\Exception\EtcdException;
+use EasySwoole\EtcdClient\Transport\TransportInterface;
+use InvalidArgumentException;
+use JsonException;
 
-class Client
+final class Client
 {
-    // KV
-    const URI_PUT = 'kv/put';
-    const URI_RANGE = 'kv/range';
-    const URI_DELETE_RANGE = 'kv/deleterange';
-    const URI_TXN = 'kv/txn';
-    const URI_COMPACTION = 'kv/compaction';
+    private ?string $token;
 
-    // Lease
-    const URI_GRANT = 'lease/grant';
-    const URI_REVOKE = 'kv/lease/revoke';
-    const URI_KEEPALIVE = 'lease/keepalive';
-    const URI_TIMETOLIVE = 'kv/lease/timetolive';
-
-    // Role
-    const URI_AUTH_ROLE_ADD = 'auth/role/add';
-    const URI_AUTH_ROLE_GET = 'auth/role/get';
-    const URI_AUTH_ROLE_DELETE = 'auth/role/delete';
-    const URI_AUTH_ROLE_LIST = 'auth/role/list';
-
-    // Authenticate
-    const URI_AUTH_ENABLE = 'auth/enable';
-    const URI_AUTH_DISABLE = 'auth/disable';
-    const URI_AUTH_AUTHENTICATE = 'auth/authenticate';
-
-    // User
-    const URI_AUTH_USER_ADD = 'auth/user/add';
-    const URI_AUTH_USER_GET = 'auth/user/get';
-    const URI_AUTH_USER_DELETE = 'auth/user/delete';
-    const URI_AUTH_USER_CHANGE_PASSWORD = 'auth/user/changepw';
-    const URI_AUTH_USER_LIST = 'auth/user/list';
-
-    const URI_AUTH_ROLE_GRANT = 'auth/role/grant';
-    const URI_AUTH_ROLE_REVOKE = 'auth/role/revoke';
-
-    const URI_AUTH_USER_GRANT = 'auth/user/grant';
-    const URI_AUTH_USER_REVOKE = 'auth/user/revoke';
-
-    /**
-     * @var Config
-     */
-    protected $config;
-
-    /**
-     * @var string
-     */
-    protected $version;
-
-    /**
-     * @var string
-     */
-    protected $host;
-
-    /**
-     * @var bool
-     */
-    protected $pretty;
-
-    /**
-     * @var
-     */
-    protected $client;
-
-    /**
-     * @var string|null auth token
-     */
-    protected $token = null;
-
-    public function __construct(Config $config)
-    {
-        $this->config = $config;
-        $this->version = trim($config->getVersion());
-        $this->pretty = $config->isPretty();
-    }
-
-    public function setToken($token)
-    {
+    public function __construct(
+        private readonly Config $config,
+        private readonly TransportInterface $transport,
+        ?string $token = null,
+    ) {
         $this->token = $token;
     }
 
-    public function clearToken()
+    public function withToken(?string $token): self
     {
-        $this->token = null;
+        $client = clone $this;
+        $client->token = $token;
+
+        return $client;
     }
 
-    // region kv
-
-    /**
-     * Put puts the given key into the key-value store.
-     * A put request increments the revision of the key-value
-     * store and generates one event in the event history.
-     *
-     * @param string $key
-     * @param string $value
-     * @param array  $options 可选参数
-     *        int64  lease
-     *        bool   prev_kv
-     *        bool   ignore_value
-     *        bool   ignore_lease
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function put(string $key, string $value, array $options = [])
+    /** @return array<string, mixed> */
+    public function put(string $key, string $value, array $options = []): array
     {
-        $params = [
-            'key' => $key,
-            'value' => $value,
-        ];
-
-        $params = $this->encode($params);
-        $options = $this->encode($options);
-        $body = $this->request(self::URI_PUT, $params, $options);
-        $body = $this->decodeBodyForFields(
-            $body,
-            'prev_kv',
-            ['key', 'value',]
-        );
-
-        if (isset($body['prev_kv']) && $this->pretty) {
-            return $this->convertFields($body['prev_kv']);
-        }
-
-        return $body;
+        return $this->call('kv/put', [
+            'key' => self::encode($key),
+            'value' => self::encode($value),
+        ] + $options, ['prev_kv']);
     }
 
-    /**
-     * Gets the key or a range of keys
-     *
-     * @param  string $key
-     * @param  array $options
-     *         string range_end
-     *         int    limit
-     *         int    revision
-     *         int    sort_order
-     *         int    sort_target
-     *         bool   serializable
-     *         bool   keys_only
-     *         bool   count_only
-     *         int64  min_mod_revision
-     *         int64  max_mod_revision
-     *         int64  min_create_revision
-     *         int64  max_create_revision
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function get(string $key, array $options = [])
+    /** @return array<string, mixed> */
+    public function range(string $key, ?string $rangeEnd = null, array $options = []): array
     {
-        $params = [
-            'key' => $key,
-        ];
-        $params = $this->encode($params);
-        $options = $this->encode($options);
-        $body = $this->request(self::URI_RANGE, $params, $options);
-        $body = $this->decodeBodyForFields(
-            $body,
-            'kvs',
-            ['key', 'value',]
-        );
-
-        if (isset($body['kvs']) && $this->pretty) {
-            return $this->convertFields($body['kvs']);
-        }
-
-        return $body;
-    }
-
-    /**
-     * get all keys
-     *
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function getAllKeys()
-    {
-        return $this->get("\0", ['range_end' => "\0"]);
-    }
-
-    /**
-     * get all keys with prefix
-     *
-     * @param string $prefix
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function getKeysWithPrefix(string $prefix)
-    {
-        $prefix = trim($prefix);
-        if (!$prefix) {
-            return [];
-        }
-        $lastIndex = strlen($prefix) - 1;
-        $lastChar = $prefix[$lastIndex];
-        $nextAsciiCode = ord($lastChar) + 1;
-        $rangeEnd = $prefix;
-        $rangeEnd[$lastIndex] = chr($nextAsciiCode);
-
-        return $this->get($prefix, ['range_end' => $rangeEnd]);
-    }
-
-    /**
-     * Removes the specified key or range of keys
-     *
-     * @param string $key
-     * @param array $options
-     *        string range_end
-     *        bool   prev_kv
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function del(string $key, array $options = [])
-    {
-        $params = [
-            'key' => $key,
-        ];
-        $params = $this->encode($params);
-        $options = $this->encode($options);
-        $body = $this->request(self::URI_DELETE_RANGE, $params, $options);
-        $body = $this->decodeBodyForFields(
-            $body,
-            'prev_kvs',
-            ['key', 'value',]
-        );
-
-        if (isset($body['prev_kvs']) && $this->pretty) {
-            return $this->convertFields($body['prev_kvs']);
-        }
-
-        return $body;
-    }
-
-    /**
-     * Compact compacts the event history in the etcd key-value store.
-     * The key-value store should be periodically compacted
-     * or the event history will continue to grow indefinitely.
-     *
-     * @param int $revision
-     *
-     * @param bool|false $physical
-     *
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function compaction(int $revision, $physical = false)
-    {
-        $params = [
-            'revision' => $revision,
-            'physical' => $physical,
-        ];
-
-        return $this->request(self::URI_COMPACTION, $params);
-    }
-
-    // endregion kv
-
-    // region lease
-
-    /**
-     * LeaseGrant creates a lease which expires if the server does not receive a
-     * keepAlive within a given time to live period. All keys attached to the lease
-     * will be expired and deleted if the lease expires.
-     * Each expired key generates a delete event in the event history.",
-     *
-     * @param int $ttl TTL is the advisory time-to-live in seconds.
-     * @param int $id ID is the requested ID for the lease.
-     *                    If ID is set to 0, the lessor chooses an ID.
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function grant(int $ttl, $id = 0)
-    {
-        $params = [
-            'TTL' => $ttl,
-            'ID' => $id,
-        ];
-
-        return $this->request(self::URI_GRANT, $params);
-    }
-
-    /**
-     * revokes a lease. All keys attached to the lease will expire and be deleted.
-     *
-     * @param int $id ID is the lease ID to revoke. When the ID is revoked,
-     *               all associated keys will be deleted.
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function revoke(int $id)
-    {
-        $params = [
-            'ID' => $id,
-        ];
-
-        return $this->request(self::URI_REVOKE, $params);
-    }
-
-    /**
-     * keeps the lease alive by streaming keep alive requests
-     * from the client\nto the server and streaming keep alive responses
-     * from the server to the client.
-     *
-     * @param int $id ID is the lease ID for the lease to keep alive.
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function keepAlive(int $id)
-    {
-        $params = [
-            'ID' => $id,
-        ];
-
-        $body = $this->request(self::URI_KEEPALIVE, $params);
-
-        if (!isset($body['result'])) {
-            return $body;
-        }
-        // response "result" field, etcd bug?
-        return [
-            'ID' => $body['result']['ID'],
-            'TTL' => $body['result']['TTL'],
-        ];
-    }
-
-    /**
-     * retrieves lease information.
-     *
-     * @param int $id ID is the lease ID for the lease.
-     * @param bool|false $keys
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function timeToLive(int $id, $keys = false)
-    {
-        $params = [
-            'ID' => $id,
-            'keys' => $keys,
-        ];
-
-        $body = $this->request(self::URI_TIMETOLIVE, $params);
-
-        if (isset($body['keys'])) {
-            $body['keys'] = array_map(function($value) {
-                return base64_decode($value);
-            }, $body['keys']);
-        }
-
-        return $body;
-    }
-
-    // endregion lease
-
-    // region auth
-
-    /**
-     * enable authentication
-     *
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function authEnable()
-    {
-        $body = $this->request(self::URI_AUTH_ENABLE);
-        $this->clearToken();
-
-        return $body;
-    }
-
-    /**
-     * disable authentication
-     *
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function authDisable()
-    {
-        $body = $this->request(self::URI_AUTH_DISABLE);
-        $this->clearToken();
-
-        return $body;
-    }
-
-    /**
-     * @param string $user
-     * @param string $password
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function authenticate(string $user, string $password)
-    {
-        $params = [
-            'name' => $user,
-            'password' => $password,
-        ];
-
-        $body = $this->request(self::URI_AUTH_AUTHENTICATE, $params);
-        if ($this->pretty && isset($body['token'])) {
-            return $body['token'];
-        }
-
-        return $body;
-    }
-
-    /**
-     * add a new role.
-     *
-     * @param string $name
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function addRole(string $name)
-    {
-        $params = [
-            'name' => $name,
-        ];
-
-        return $this->request(self::URI_AUTH_ROLE_ADD, $params);
-    }
-
-    /**
-     * get detailed role information.
-     *
-     * @param string $role
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function getRole(string $role)
-    {
-        $params = [
-            'role' => $role,
-        ];
-
-        $body = $this->request(self::URI_AUTH_ROLE_GET, $params);
-
-        $body = $this->decodeBodyForFields(
-            $body,
-            'perm',
-            ['key', 'range_end',]
-        );
-        if ($this->pretty && isset($body['perm'])) {
-            return $body['perm'];
-        }
-
-        return $body;
-    }
-
-    /**
-     * delete a specified role.
-     *
-     * @param string $role
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function deleteRole(string $role)
-    {
-        $params = [
-            'role' => $role,
-        ];
-
-        return $this->request(self::URI_AUTH_ROLE_DELETE, $params);
-    }
-
-    /**
-     * get lists of all roles
-     *
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function roleList()
-    {
-        $body = $this->request(self::URI_AUTH_ROLE_LIST);
-
-        if ($this->pretty && isset($body['roles'])) {
-            return $body['roles'];
-        }
-
-        return $body;
-    }
-
-    /**
-     * add a new user
-     *
-     * @param string $user
-     * @param string $password
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function addUser(string $user, string $password)
-    {
-        $params = [
-            'name' => $user,
-            'password' => $password,
-        ];
-
-        return $this->request(self::URI_AUTH_USER_ADD, $params);
-    }
-
-    /**
-     * get detailed user information
-     *
-     * @param string $user
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function getUser(string $user)
-    {
-        $params = [
-            'name' => $user,
-        ];
-
-        $body = $this->request(self::URI_AUTH_USER_GET, $params);
-        if ($this->pretty && isset($body['roles'])) {
-            return $body['roles'];
-        }
-
-        return $body;
-    }
-
-    /**
-     * delete a specified user
-     *
-     * @param string $user
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function deleteUser(string $user)
-    {
-        $params = [
-            'name' => $user,
-        ];
-
-        return $this->request(self::URI_AUTH_USER_DELETE, $params);
-    }
-
-    /**
-     * get a list of all users.
-     *
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function userList()
-    {
-        $body = $this->request(self::URI_AUTH_USER_LIST);
-        if ($this->pretty && isset($body['users'])) {
-            return $body['users'];
-        }
-
-        return $body;
-    }
-
-    /**
-     * change the password of a specified user.
-     *
-     * @param string $user
-     * @param string $password
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function changeUserPassword(string $user, string $password)
-    {
-        $params = [
-            'name' => $user,
-            'password' => $password,
-        ];
-
-        return $this->request(self::URI_AUTH_USER_CHANGE_PASSWORD, $params);
-    }
-
-    /**
-     * grant a permission of a specified key or range to a specified role.
-     *
-     * @param string $role
-     * @param int $permType
-     * @param string $key
-     * @param string|null $rangeEnd
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function grantRolePermission(string $role, int $permType, string $key, ?string $rangeEnd = null)
-    {
-        $params = [
-            'name' => $role,
-            'perm' => [
-                'permType' => $permType,
-                'key' => base64_encode($key),
-            ],
-        ];
+        $payload = ['key' => self::encode($key)] + $options;
         if ($rangeEnd !== null) {
-            $params['perm']['range_end'] = base64_encode($rangeEnd);
+            $payload['range_end'] = self::encode($rangeEnd);
         }
 
-        return $this->request(self::URI_AUTH_ROLE_GRANT, $params);
+        return $this->call('kv/range', $payload, ['kvs']);
     }
 
-    /**
-     * revoke a key or range permission of a specified role.
-     *
-     * @param string $role
-     * @param string $key
-     * @param string|null $rangeEnd
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function revokeRolePermission(string $role, string $key, ?string $rangeEnd = null)
+    /** @return array<string, mixed> */
+    public function rangePrefix(string $prefix, array $options = []): array
     {
-        $params = [
-            'role' => $role,
-            'key' => $key,
-        ];
+        if ($prefix === '') {
+            throw new InvalidArgumentException('The prefix cannot be empty.');
+        }
+
+        return $this->range($prefix, self::prefixEnd($prefix), $options);
+    }
+
+    /** @return array<string, mixed> */
+    public function rangeAll(array $options = []): array
+    {
+        return $this->range("\0", "\0", $options);
+    }
+
+    /** @return array<string, mixed> */
+    public function delete(string $key, ?string $rangeEnd = null, bool $previous = false): array
+    {
+        $payload = ['key' => self::encode($key), 'prev_kv' => $previous];
         if ($rangeEnd !== null) {
-            $params['range_end'] = $rangeEnd;
+            $payload['range_end'] = self::encode($rangeEnd);
         }
 
-        return $this->request(self::URI_AUTH_ROLE_REVOKE, $params);
+        return $this->call('kv/deleterange', $payload, ['prev_kvs']);
+    }
+
+    /** @return array<string, mixed> */
+    public function deletePrefix(string $prefix, bool $previous = false): array
+    {
+        if ($prefix === '') {
+            throw new InvalidArgumentException('The prefix cannot be empty.');
+        }
+
+        return $this->delete($prefix, self::prefixEnd($prefix), $previous);
+    }
+
+    /** @return array<string, mixed> */
+    public function compact(int $revision, bool $physical = false): array
+    {
+        return $this->call('kv/compaction', ['revision' => $revision, 'physical' => $physical]);
+    }
+
+    /** @return array<string, mixed> */
+    public function grantLease(int $ttl, int $id = 0): array
+    {
+        return $this->call('lease/grant', ['TTL' => $ttl, 'ID' => $id]);
+    }
+
+    /** @return array<string, mixed> */
+    public function revokeLease(int $id): array
+    {
+        return $this->call('lease/revoke', ['ID' => $id]);
+    }
+
+    /** @return array<string, mixed> */
+    public function keepLeaseAlive(int $id): array
+    {
+        $response = $this->call('lease/keepalive', ['ID' => $id]);
+
+        return isset($response['result']) && is_array($response['result']) ? $response['result'] : $response;
+    }
+
+    /** @return array<string, mixed> */
+    public function leaseTimeToLive(int $id, bool $includeKeys = false): array
+    {
+        return $this->call('lease/timetolive', ['ID' => $id, 'keys' => $includeKeys], ['keys']);
+    }
+
+    public function authenticate(string $username, string $password): string
+    {
+        $response = $this->call('auth/authenticate', ['name' => $username, 'password' => $password]);
+        $token = $response['token'] ?? null;
+        if (!is_string($token) || $token === '') {
+            throw new EtcdException('The authentication response did not contain a token.');
+        }
+
+        return $token;
+    }
+
+    /** @return array<string, mixed> */
+    public function enableAuthentication(): array
+    {
+        return $this->call('auth/enable');
+    }
+
+    /** @return array<string, mixed> */
+    public function disableAuthentication(): array
+    {
+        return $this->call('auth/disable');
+    }
+
+    /** @return array<string, mixed> */
+    public function addUser(string $name, string $password): array
+    {
+        return $this->call('auth/user/add', ['name' => $name, 'password' => $password]);
+    }
+
+    /** @return array<string, mixed> */
+    public function user(string $name): array
+    {
+        return $this->call('auth/user/get', ['name' => $name]);
+    }
+
+    /** @return array<string, mixed> */
+    public function users(): array
+    {
+        return $this->call('auth/user/list');
+    }
+
+    /** @return array<string, mixed> */
+    public function deleteUser(string $name): array
+    {
+        return $this->call('auth/user/delete', ['name' => $name]);
+    }
+
+    /** @return array<string, mixed> */
+    public function changePassword(string $name, string $password): array
+    {
+        return $this->call('auth/user/changepw', ['name' => $name, 'password' => $password]);
+    }
+
+    /** @return array<string, mixed> */
+    public function grantUserRole(string $user, string $role): array
+    {
+        return $this->call('auth/user/grant', ['user' => $user, 'role' => $role]);
+    }
+
+    /** @return array<string, mixed> */
+    public function revokeUserRole(string $user, string $role): array
+    {
+        return $this->call('auth/user/revoke', ['name' => $user, 'role' => $role]);
+    }
+
+    /** @return array<string, mixed> */
+    public function addRole(string $name): array
+    {
+        return $this->call('auth/role/add', ['name' => $name]);
+    }
+
+    /** @return array<string, mixed> */
+    public function role(string $name): array
+    {
+        return $this->call('auth/role/get', ['role' => $name], ['perm']);
+    }
+
+    /** @return array<string, mixed> */
+    public function roles(): array
+    {
+        return $this->call('auth/role/list');
+    }
+
+    /** @return array<string, mixed> */
+    public function deleteRole(string $name): array
+    {
+        return $this->call('auth/role/delete', ['role' => $name]);
+    }
+
+    /** @return array<string, mixed> */
+    public function grantRolePermission(
+        string $role,
+        Permission $permission,
+        string $key,
+        ?string $rangeEnd = null,
+    ): array {
+        $grant = ['permType' => $permission->value, 'key' => self::encode($key)];
+        if ($rangeEnd !== null) {
+            $grant['range_end'] = self::encode($rangeEnd);
+        }
+
+        return $this->call('auth/role/grant', ['name' => $role, 'perm' => $grant]);
+    }
+
+    /** @return array<string, mixed> */
+    public function revokeRolePermission(string $role, string $key, ?string $rangeEnd = null): array
+    {
+        $payload = ['role' => $role, 'key' => self::encode($key)];
+        if ($rangeEnd !== null) {
+            $payload['range_end'] = self::encode($rangeEnd);
+        }
+
+        return $this->call('auth/role/revoke', $payload);
     }
 
     /**
-     * grant a role to a specified user.
-     *
-     * @param string $user
-     * @param string $role
-     * @return array
-     * @throws InvalidUrl
+     * @param array<string, mixed> $payload
+     * @param list<string> $binaryCollections
+     * @return array<string, mixed>
      */
-    public function grantUserRole(string $user, string $role)
+    private function call(string $path, array $payload = [], array $binaryCollections = []): array
     {
-        $params = [
-            'user' => $user,
-            'role' => $role,
-        ];
-
-        return $this->request(self::URI_AUTH_USER_GRANT, $params);
-    }
-
-    /**
-     * revoke a role of specified user.
-     *
-     * @param string $user
-     * @param string $role
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function revokeUserRole(string $user, string $role)
-    {
-        $params = [
-            'name' => $user,
-            'role' => $role,
-        ];
-
-        return $this->request(self::URI_AUTH_USER_REVOKE, $params);
-    }
-
-    // endregion auth
-
-    /**
-     * @param string $uri
-     * @param array $params
-     * @param array $options
-     * @return array
-     * @throws InvalidUrl
-     */
-    public function request(string $uri, array $params = [], array $options = []): array
-    {
-        if ($options) {
-            $params = array_merge($params, $options);
-        }
-        // 没有参数, 设置一个默认参数
-        if (!$params) {
-            $params['php-etcd-client'] = 1;
+        $headers = ['Content-Type' => 'application/json'];
+        if ($this->token !== null) {
+            $headers['Grpc-Metadata-Token'] = $this->token;
         }
 
-        $header = [];
-        if ($this->token) {
-            $header['Grpc-Metadata-Token'] = $this->token;
+        $response = $this->transport->post(
+            $this->config->url($path),
+            $payload,
+            $headers,
+            $this->config->timeout,
+            $this->config->clientCertificate,
+            $this->config->clientKey,
+        );
+
+        try {
+            $body = json_decode($response->body, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new EtcdException('etcd returned invalid JSON.', $response->statusCode, $exception);
         }
-
-        $url = sprintf('%s://%s:%s/%s/%s', $this->config->getScheme(), $this->config->getHost(),
-            $this->config->getPort(), $this->version, $uri);
-
-        $httpClient = new HttpClient($url);
-
-        if ($this->config->isSsl()) {
-            $httpClient->setSslCertFile($this->config->getSslCert());
-            $httpClient->setSslKeyFile($this->config->getSslKey());
+        if (!is_array($body)) {
+            throw new EtcdException('etcd returned an unexpected JSON value.', $response->statusCode);
         }
-
-        $httpClient->setTimeout($this->config->getTimeout());
-        $httpClient->setHeaders($header, true, false);
-        $response = $httpClient->postJson(json_encode($params));
-
-        $body = json_decode($response->getBody(), true);
-        if ($this->pretty && isset($body['header'])) {
-            unset($body['header']);
+        if ($response->statusCode < 200 || $response->statusCode >= 300) {
+            $message = is_string($body['message'] ?? null) ? $body['message'] : 'etcd request failed.';
+            throw new EtcdException($message, $response->statusCode);
         }
-        return $body;
-    }
-
-    /**
-     * string类型key用base64编码
-     *
-     * @param array $data
-     * @return array
-     */
-    protected function encode(array $data)
-    {
-        foreach ($data as $key => $value) {
-            if (is_string($value)) {
-                $data[$key] = base64_encode($value);
+        foreach ($binaryCollections as $field) {
+            if (isset($body[$field])) {
+                $body[$field] = self::decodeCollection($body[$field]);
             }
         }
 
-        return $data;
+        return $body;
     }
 
-    /**
-     * 指定字段base64解码
-     *
-     * @param array  $body
-     * @param string $bodyKey
-     * @param array  $fields  需要解码的字段
-     * @return array
-     */
-    protected function decodeBodyForFields(array $body, string $bodyKey, array $fields)
+    private static function encode(string $value): string
     {
-        if (!isset($body[$bodyKey])) {
-            return $body;
+        return base64_encode($value);
+    }
+
+    private static function prefixEnd(string $prefix): string
+    {
+        for ($index = strlen($prefix) - 1; $index >= 0; --$index) {
+            if (ord($prefix[$index]) < 0xff) {
+                return substr($prefix, 0, $index) . chr(ord($prefix[$index]) + 1);
+            }
         }
-        $data = $body[$bodyKey];
-        if (!isset($data[0])) {
-            $data = array($data);
+
+        return "\0";
+    }
+
+    private static function decodeCollection(mixed $items): mixed
+    {
+        if (is_array($items) && array_is_list($items) && ($items === [] || is_string($items[0]))) {
+            return array_map(static function (mixed $item): mixed {
+                if (!is_string($item)) {
+                    return $item;
+                }
+
+                $decoded = base64_decode($item, true);
+
+                return $decoded === false ? $item : $decoded;
+            }, $items);
         }
-        foreach ($data as $key => $value) {
-            foreach ($fields as $field) {
-                if (isset($value[$field])) {
-                    $data[$key][$field] = base64_decode($value[$field]);
+
+        $single = is_array($items) && !array_is_list($items);
+        $rows = $single ? [$items] : $items;
+        if (!is_array($rows)) {
+            return $items;
+        }
+        foreach ($rows as &$row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            foreach (['key', 'value', 'range_end'] as $field) {
+                if (is_string($row[$field] ?? null)) {
+                    $decoded = base64_decode($row[$field], true);
+                    if ($decoded !== false) {
+                        $row[$field] = $decoded;
+                    }
                 }
             }
         }
 
-        if (isset($body[$bodyKey][0])) {
-            $body[$bodyKey] = $data;
-        } else {
-            $body[$bodyKey] = $data[0];
-        }
-
-        return $body;
-    }
-
-    protected function convertFields(array $data)
-    {
-        if (!isset($data[0])) {
-            return $data['value'];
-        }
-
-        $map = [];
-        foreach ($data as $index => $value) {
-            $key = $value['key'];
-            $map[$key] = $value['value'];
-        }
-
-        return $map;
+        return $single ? ($rows[0] ?? []) : $rows;
     }
 }

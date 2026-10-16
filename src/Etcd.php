@@ -1,30 +1,18 @@
 <?php
+
 declare(strict_types=1);
 
 namespace EasySwoole\EtcdClient;
 
-class Etcd
+use EasySwoole\EtcdClient\Transport\EasySwooleTransport;
+use EasySwoole\EtcdClient\Transport\TransportInterface;
+
+final class Etcd
 {
-    const PERMISSION_READ = 0;
+    public readonly Client $client;
 
-    const PERMISSION_WRITE = 1;
-
-    const PERMISSION_READWRITE = 2;
-
-    protected $config;
-
-    function __construct(Config $config)
+    public function __construct(Config $config, ?TransportInterface $transport = null)
     {
-        $this->config = $config;
-    }
-
-    public function getConfig(): Config
-    {
-        return $this->config;
-    }
-
-    public function client(): Client
-    {
-        return new Client($this->config);
+        $this->client = new Client($config, $transport ?? new EasySwooleTransport());
     }
 }
