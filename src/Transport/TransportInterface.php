@@ -12,7 +12,5 @@ interface TransportInterface
         array $payload,
         array $headers,
         float $timeout,
-        ?string $clientCertificate = null,
-        ?string $clientKey = null,
     ): TransportResponse;
 }

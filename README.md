@@ -49,10 +49,9 @@ var_dump($result['kvs'][0]['value']); // 127.0.0.1:9501
 | `endpoint` | `string` | `http://127.0.0.1:2379` | etcd 服务地址，必须使用 HTTP 或 HTTPS |
 | `apiVersion` | `string` | `v3` | JSON Gateway API 版本 |
 | `timeout` | `float` | `10.0` | HTTP 请求超时秒数 |
-| `clientCertificate` | `?string` | `null` | mTLS 客户端证书路径 |
-| `clientKey` | `?string` | `null` | mTLS 客户端私钥路径 |
+| `tls` | `?TlsConfig` | HTTPS 时自动创建 | TLS 与 mTLS 配置；只能用于 HTTPS 地址 |
 
-客户端证书和私钥必须同时配置。
+HTTPS 地址即使没有显式传入 `TlsConfig`，也会自动使用严格证书校验配置。
 
 ## KV 操作
 
@@ -272,19 +271,96 @@ $client->deleteRole('config-reader');
 
 ## HTTPS 与双向 TLS
 
+使用 HTTPS 时，客户端会显式开启 TLS，即使 etcd 使用的是常见的 `2379` 而不是 `443` 端口。默认安全策略如下：
+
+- 校验服务端证书；
+- 不允许自签名证书；
+- 使用 `endpoint` 中的主机名进行 TLS 主机名校验；
+- 使用操作系统默认 CA；也可以显式指定私有 CA。
+
+### 使用私有 CA 和 mTLS
+
 ```php
 use EasySwoole\EtcdClient\Config;
 use EasySwoole\EtcdClient\Etcd;
+use EasySwoole\EtcdClient\TlsConfig;
+
+$tls = new TlsConfig(
+    caFile: '/run/secrets/etcd-ca.crt',
+    clientCertificate: '/run/secrets/etcd-client.crt',
+    clientPrivateKey: '/run/secrets/etcd-client.key',
+    passphrase: getenv('ETCD_CLIENT_KEY_PASSPHRASE') ?: null,
+    serverName: 'etcd.internal',
+);
 
 $etcd = new Etcd(new Config(
     endpoint: 'https://etcd.internal:2379',
     timeout: 5.0,
-    clientCertificate: '/run/secrets/etcd-client.crt',
-    clientKey: '/run/secrets/etcd-client.key',
+    tls: $tls,
 ));
 
 $client = $etcd->client;
 ```
+
+如果通过 IP 地址连接，但证书签发给域名，可以单独指定证书主机名：
+
+```php
+$tls = new TlsConfig(
+    caFile: '/run/secrets/etcd-ca.crt',
+    serverName: 'etcd.internal',
+);
+
+$config = new Config(endpoint: 'https://10.0.0.5:2379', tls: $tls);
+```
+
+也可以指定经哈希处理的 CA 目录：
+
+```php
+$tls = new TlsConfig(
+    caPath: '/etc/ssl/certs',
+);
+
+$config = new Config(endpoint: 'https://etcd.internal:2379', tls: $tls);
+```
+
+### 开发环境中的自签名证书
+
+建议仍然保持证书校验，只允许自签名证书：
+
+```php
+$tls = new TlsConfig(
+    verifyPeer: true,
+    allowSelfSigned: true,
+    serverName: 'localhost',
+);
+
+$config = new Config(endpoint: 'https://127.0.0.1:2379', tls: $tls);
+```
+
+只有在临时诊断环境中才应完全关闭服务端证书校验：
+
+```php
+$tls = new TlsConfig(
+    verifyPeer: false,
+);
+
+$config = new Config(endpoint: 'https://127.0.0.1:2379', tls: $tls);
+```
+
+> 禁用 `verifyPeer` 会使客户端无法确认服务端身份，可能遭受中间人攻击，不应在生产环境使用。
+
+`TlsConfig` 可用配置项：
+
+| 配置 | 默认值 | 说明 |
+| --- | --- | --- |
+| `verifyPeer` | `true` | 验证服务端证书 |
+| `allowSelfSigned` | `false` | 是否允许自签名证书；建议优先通过 `caFile` 信任私有 CA |
+| `caFile` | `null` | CA 证书文件绝对路径 |
+| `caPath` | `null` | 已进行哈希处理的 CA 证书目录 |
+| `clientCertificate` | `null` | mTLS 客户端证书文件 |
+| `clientPrivateKey` | `null` | mTLS 客户端私钥文件，必须与证书同时配置 |
+| `passphrase` | `null` | 客户端私钥密码 |
+| `serverName` | `null` | TLS 主机名/SNI，例如 `etcd.internal` |
 
 ## 返回值与 Base64 处理
 

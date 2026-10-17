@@ -13,6 +13,6 @@ final class Etcd
 
     public function __construct(Config $config, ?TransportInterface $transport = null)
     {
-        $this->client = new Client($config, $transport ?? new EasySwooleTransport());
+        $this->client = new Client($config, $transport ?? new EasySwooleTransport($config->tls));
     }
 }

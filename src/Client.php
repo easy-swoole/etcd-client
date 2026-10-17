@@ -250,8 +250,6 @@ final class Client
             $payload,
             $headers,
             $this->config->timeout,
-            $this->config->clientCertificate,
-            $this->config->clientKey,
         );
 
         try {

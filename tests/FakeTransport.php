@@ -9,7 +9,7 @@ use EasySwoole\EtcdClient\Transport\TransportResponse;
 
 final class FakeTransport implements TransportInterface
 {
-    /** @var list<array{url: string, payload: array<string, mixed>, headers: array<string, string>, timeout: float, certificate: ?string, key: ?string}> */
+    /** @var list<array<string, mixed>> */
     public array $requests = [];
 
     public function __construct(private TransportResponse $response = new TransportResponse(200, '{}'))
@@ -29,22 +29,18 @@ final class FakeTransport implements TransportInterface
         array $payload,
         array $headers,
         float $timeout,
-        ?string $clientCertificate = null,
-        ?string $clientKey = null,
     ): TransportResponse {
         $this->requests[] = [
             'url' => $url,
             'payload' => $payload,
             'headers' => $headers,
             'timeout' => $timeout,
-            'certificate' => $clientCertificate,
-            'key' => $clientKey,
         ];
 
         return $this->response;
     }
 
-    /** @return array{url: string, payload: array<string, mixed>, headers: array<string, string>, timeout: float, certificate: ?string, key: ?string} */
+    /** @return array<string, mixed> */
     public function lastRequest(): array
     {
         return $this->requests[array_key_last($this->requests)];
